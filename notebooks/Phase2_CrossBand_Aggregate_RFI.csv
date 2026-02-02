@@ -1,0 +1,6 @@
+Band,Service,Baseline SNR (dB),C/I_Aggregate (dB),SNR with I_Agg (dB),SNR Loss (dB),P(SNR Loss > 1 dB) (%),P(SNR Loss > 3 dB) (%),P(SNR Loss > 6 dB) (%),epfd_Aggregate (dBW/m2/MHz)
+S-band,SRS near-Earth (SA.609),10.05,-8.43,-8.49,18.54,80.0,80.0,79.99,-258.9
+X-band,SRS deep-space (SA.1157),8.03,0.05,-0.59,8.62,79.98,78.17,63.82,-267.73
+Ku-band,FSS GEO gateway (S.1325),23.02,17.92,16.75,6.27,79.69,71.92,42.13,-267.33
+K-band,FSS high-frequency,30.07,23.09,22.3,7.78,79.95,76.69,56.52,-265.3
+Ka-band,FSS / feeder link,36.55,28.0,27.44,9.12,80.0,78.61,66.4,-263.81
