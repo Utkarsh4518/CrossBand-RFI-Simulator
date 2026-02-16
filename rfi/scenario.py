@@ -14,6 +14,22 @@ from rfi.equations_itu import (
     generate_log_normal_interference_samples_dbw,
     compute_time_fraction_exceeded,
 )
+from rfi.geometry import generate_leo_interference_geometry
+from rfi.compliance import (
+    compute_epfd_time_series_dbw_m2_mhz,
+    compute_epfd_exceedance_probability,
+    classify_epfd_compliance,
+)
+from rfi.link_adaptation import (
+    get_modulation_table,
+    map_snr_to_spectral_efficiency,
+    compute_throughput_bps,
+    compute_throughput_degradation_percent,
+)
+from rfi.propagation import (
+    compute_rain_attenuation_db,
+    generate_rain_time_series,
+)
 
 # Default constants (fixed parameters)
 
@@ -169,6 +185,189 @@ def run_multi_entry_rfi_scenario(
         ),
 
         "SNR_Loss_Samples_dB": snr_loss_samples_db,
+    }
+
+
+def run_dynamic_geometry_rfi_scenario(
+    band_params: Dict[str, Any],
+    leo_altitude_km: float,
+    duration_sec: float,
+    dt_sec: float,
+    interferer_eirp_dbw: float,
+    rain_rate_mm_per_hr: float = 0.0,
+    rain_probability: float = 0.0,
+    effective_rain_path_km: float = 5.0,
+) -> Dict[str, Any]:
+    """
+    Compute time-varying interference using geometry-based slant range
+    and off-axis angle from LEO orbit. Purely deterministic, no log-normal statistics.
+    """
+    time_sec, d_km_array, theta_deg_array = generate_leo_interference_geometry(
+        leo_altitude_km=leo_altitude_km,
+        duration_sec=duration_sec,
+        dt_sec=dt_sec,
+    )
+
+    f_ghz = band_params["f_ghz"]
+    d_km = band_params["d_km"]
+    T_sys_k = band_params["T_sys_k"]
+    BW_hz = band_params.get("BW_Hz", DEFAULT_BW_HZ)
+
+    N_dbw = compute_thermal_noise_dbw(T_sys_k, BW_hz)
+    L_fs_db = free_space_path_loss_db(f_ghz, d_km)
+    C_dbw = (
+        band_params["EIRP_dbw"]
+        + band_params["G_rx_db"]
+        - L_fs_db
+        - DEFAULT_L_ATM_DB
+        - DEFAULT_L_OTHER_DB
+    )
+    baseline_snr_db = C_dbw - N_dbw
+
+    rain_rate_series = generate_rain_time_series(
+        duration_sec,
+        dt_sec,
+        rain_rate_mm_per_hr,
+        rain_probability,
+    )
+
+    A_rain_db = compute_rain_attenuation_db(
+        f_ghz,
+        rain_rate_series,
+        effective_rain_path_km,
+    )
+    C_time_step_dbw = C_dbw - A_rain_db
+
+    L_fs_int_db = free_space_path_loss_db(f_ghz, d_km_array)
+
+    theta_3db = band_params["theta_3db"]
+    g_max = band_params["G_rx_db"]
+    theta_edge = 2.5 * theta_3db
+    if theta_3db == 0:
+        g_rx_off_axis_db = np.full_like(theta_deg_array, g_max, dtype=float)
+    else:
+        g_rx_off_axis_db = np.where(
+            theta_deg_array < theta_edge,
+            g_max - 12.0 * (theta_deg_array / theta_3db) ** 2,
+            g_max - 30.0,
+        )
+
+    I_time_series_dbw = compute_interference_power_dbw(
+        eirp_int_dbw=interferer_eirp_dbw,
+        l_fs_int_db=L_fs_int_db,
+        l_atm_db=DEFAULT_L_ATM_DB,
+        g_rx_off_axis_db=g_rx_off_axis_db,
+        l_misc_db=DEFAULT_L_OTHER_DB,
+    )
+
+    c_lin = 10 ** (C_dbw / 10.0)
+    n_lin = 10 ** (N_dbw / 10.0)
+    i_lin = 10 ** (I_time_series_dbw / 10.0)
+    denom = n_lin + i_lin
+    snr_lin = np.where(denom > 0, c_lin / denom, 1e-30)
+    SNR_time_series_db = 10.0 * np.log10(snr_lin)
+
+    SNR_loss_time_series_db = baseline_snr_db - SNR_time_series_db
+
+    c_joint_lin = 10 ** (C_time_step_dbw / 10.0)
+    denom_joint = n_lin + i_lin
+    snr_joint_lin = np.where(denom_joint > 0, c_joint_lin / denom_joint, 1e-30)
+    SNR_joint_time_series_db = 10.0 * np.log10(snr_joint_lin)
+    SNR_joint_loss_time_series_db = baseline_snr_db - SNR_joint_time_series_db
+
+    spectral_efficiency_joint = map_snr_to_spectral_efficiency(SNR_joint_time_series_db)
+    outage_joint_percent = (
+        np.sum(spectral_efficiency_joint == 0) / len(spectral_efficiency_joint) * 100.0
+    )
+
+    spectral_efficiency_degraded = map_snr_to_spectral_efficiency(SNR_time_series_db)
+    throughput_degraded_bps = compute_throughput_bps(
+        spectral_efficiency_degraded,
+        BW_hz,
+    )
+
+    baseline_snr_array = np.full_like(SNR_time_series_db, baseline_snr_db)
+    spectral_efficiency_baseline = map_snr_to_spectral_efficiency(baseline_snr_array)
+    throughput_baseline_bps = compute_throughput_bps(
+        spectral_efficiency_baseline,
+        BW_hz,
+    )
+
+    throughput_degradation_percent = compute_throughput_degradation_percent(
+        throughput_baseline_bps,
+        throughput_degraded_bps,
+    )
+
+    modulation_table = get_modulation_table()
+    modulation_distribution = {}
+    total_samples = len(spectral_efficiency_degraded)
+    for entry in modulation_table:
+        eff = entry["spectral_efficiency_bpshz"]
+        name = entry["name"]
+        percent = (
+            np.sum(spectral_efficiency_degraded == eff)
+            / total_samples
+            * 100.0
+        )
+        modulation_distribution[name] = percent
+    # Outage condition (no modulation selected)
+    outage_percent = (
+        np.sum(spectral_efficiency_degraded == 0)
+        / total_samples
+        * 100.0
+    )
+    modulation_distribution["Outage"] = outage_percent
+
+    link_availability_percent = 100.0 - outage_percent
+
+    epfd_time_series_db = compute_epfd_time_series_dbw_m2_mhz(
+        eirp_int_dbw=interferer_eirp_dbw,
+        slant_range_km_array=d_km_array,
+        off_axis_angle_deg_array=theta_deg_array,
+        g_rx_max_db=band_params["G_rx_db"],
+        theta_3db_deg=band_params["theta_3db"],
+        f_ghz=band_params["f_ghz"],
+        bandwidth_mhz=BW_hz / 1e6,
+    )
+
+    epfd_limit_db = -150.0  # placeholder regulatory threshold
+    epfd_exceed_percent = compute_epfd_exceedance_probability(
+        epfd_time_series_db,
+        epfd_limit_db,
+    )
+    compliance_status = classify_epfd_compliance(epfd_exceed_percent)
+
+    return {
+        "Time (s)": time_sec,
+        "Slant Range (km)": d_km_array,
+        "Off-axis Angle (deg)": theta_deg_array,
+        "I_time_series (dBW)": I_time_series_dbw,
+        "SNR_time_series (dB)": SNR_time_series_db,
+        "SNR_loss_time_series (dB)": SNR_loss_time_series_db,
+        "P(SNR Loss > 1 dB) (%)": compute_time_fraction_exceeded(
+            SNR_loss_time_series_db, 1.0
+        ),
+        "P(SNR Loss > 3 dB) (%)": compute_time_fraction_exceeded(
+            SNR_loss_time_series_db, 3.0
+        ),
+        "P(SNR Loss > 6 dB) (%)": compute_time_fraction_exceeded(
+            SNR_loss_time_series_db, 6.0
+        ),
+        "EPFD_time_series (dBW/m2/MHz)": epfd_time_series_db,
+        "EPFD_limit (dBW/m2/MHz)": epfd_limit_db,
+        "EPFD_exceedance (%)": epfd_exceed_percent,
+        "EPFD_compliance_status": compliance_status,
+        "Spectral_efficiency_degraded (bps/Hz)": spectral_efficiency_degraded,
+        "Spectral_efficiency_baseline (bps/Hz)": spectral_efficiency_baseline,
+        "Throughput_degraded (bps)": throughput_degraded_bps,
+        "Throughput_baseline (bps)": throughput_baseline_bps,
+        "Throughput_degradation (%)": throughput_degradation_percent,
+        "Modulation_distribution (%)": modulation_distribution,
+        "Link_availability (%)": link_availability_percent,
+        "Rain_rate_time_series (mm/hr)": rain_rate_series,
+        "SNR_joint_time_series (dB)": SNR_joint_time_series_db,
+        "SNR_joint_loss_time_series (dB)": SNR_joint_loss_time_series_db,
+        "Joint_outage (%)": outage_joint_percent,
     }
 
 

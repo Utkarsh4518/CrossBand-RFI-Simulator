@@ -262,7 +262,85 @@ This formulation expresses EPFD using a link-budget approach consistent with the
 rest of the model; geometric spreading is fully captured by the free-space path
 loss term $L_{\mathrm{fs}}$ defined in ITU-R P.525.
 
+%------------------------------------------------
+\section{LEO--GEO Orbital Geometry}
 
+\subsection{Orbital Angular Velocity (Circular Orbit)}
+\begin{equation}
+\omega = \sqrt{\frac{\mu}{r^3}}, \qquad r = R_{\mathrm{E}} + h_{\mathrm{LEO}}
+\end{equation}
+
+\subsection{LEO Position (Equatorial Plane)}
+\begin{equation}
+x_{\mathrm{LEO}} = r \cos(\omega t + \phi_0), \qquad
+y_{\mathrm{LEO}} = r \sin(\omega t + \phi_0)
+\end{equation}
+GEO fixed at $(x_{\mathrm{GEO}}, y_{\mathrm{GEO}}) = (R_{\mathrm{E}} + h_{\mathrm{GEO}}, 0)$.
+
+\subsection{Slant Range}
+\begin{equation}
+d_{\mathrm{slant}} = \sqrt{(x_{\mathrm{LEO}} - x_{\mathrm{GEO}})^2 + (y_{\mathrm{LEO}} - y_{\mathrm{GEO}})^2}
+\end{equation}
+
+\subsection{Off-Axis Angle at GEO}
+Angle between GEO--Earth-center vector and GEO--LEO vector; used with S.1528 for $G_{\mathrm{rx}}(\theta)$.
+
+\begin{itemize}
+\item \textbf{Variables:} $\mu$: gravitational parameter [km$^3$/s$^2$], $R_{\mathrm{E}}$: Earth radius [km], $h_{\mathrm{LEO}}$, $h_{\mathrm{GEO}}$: altitudes [km], $\phi_0$: initial phase [rad].
+\end{itemize}
+
+%------------------------------------------------
+\section{Rain Attenuation}
+
+\subsection{Specific Attenuation}
+\begin{equation}
+\gamma = k \cdot R^{\alpha}
+\end{equation}
+Frequency-dependent coefficients (simplified): $f < 5$\,GHz: $k=0.0001$, $\alpha=1.0$; $5$--$15$\,GHz: $k=0.01$, $\alpha=1.1$; $15$--$25$\,GHz: $k=0.05$, $\alpha=1.2$; $f \geq 25$\,GHz: $k=0.15$, $\alpha=1.3$.
+
+\subsection{Rain Attenuation on Path}
+\begin{equation}
+A_{\mathrm{rain}} = \gamma \cdot L_{\mathrm{eff}}
+\end{equation}
+
+\begin{itemize}
+\item \textbf{Variables:} $\gamma$: specific attenuation [dB/km], $R$: rain rate [mm/h], $L_{\mathrm{eff}}$: effective path length [km].
+\end{itemize}
+
+%------------------------------------------------
+\section{Link Adaptation}
+
+\subsection{Modulation Table (AMC)}
+Spectral efficiency $\eta$ selected by SNR threshold: QPSK $\geq 0$\,dB $\to$ 2\,bps/Hz; 8PSK $\geq 5$\,dB $\to$ 3\,bps/Hz; 16APSK $\geq 10$\,dB $\to$ 4\,bps/Hz; 32APSK $\geq 15$\,dB $\to$ 5\,bps/Hz. Below lowest threshold: $\eta = 0$ (outage).
+
+\subsection{Throughput}
+\begin{equation}
+\text{Throughput} = \eta \cdot B
+\end{equation}
+$\eta$ in bps/Hz, $B$ in Hz; result in bps.
+
+\subsection{Throughput Degradation}
+\begin{equation}
+\text{Degradation (\%)} = 100 \cdot \frac{\mathrm{mean}(P_{\mathrm{base}} - P_{\mathrm{deg}})}{\mathrm{mean}(P_{\mathrm{base}})}
+\end{equation}
+$P_{\mathrm{base}}$: baseline throughput time series; $P_{\mathrm{deg}}$: degraded (or joint) throughput time series.
+
+%------------------------------------------------
+\section{RFI Robustness Index (RRI)}
+
+\subsection{Definition}
+\begin{equation}
+\mathrm{RRI} =
+w_{\mathrm{t}}\left(1 - \frac{T}{100}\right)
++ w_{\mathrm{a}} \frac{A}{100}
++ w_{\mathrm{e}}\left(1 - \frac{E}{100}\right)
++ w_{\mathrm{o}}\left(1 - \frac{O}{100}\right)
+\end{equation}
+Default equal weights: $w_{\mathrm{t}} = w_{\mathrm{a}} = w_{\mathrm{e}} = w_{\mathrm{o}} = 0.25$.
+
+\begin{itemize}
+\item \textbf{Variables:} $T$: throughput degradation [\%]; $A$: link availability [\%]; $E$: EPFD exceedance [\%]; $O$: joint outage [\%]. Higher RRI corresponds to more robust link.
+\end{itemize}
 
 
 \end{document}

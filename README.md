@@ -1,69 +1,118 @@
-# Analysis and Modeling of the Interferences Affecting Space Communication Links
+# Analysis and Modeling of Interferences Affecting Space Communication Links
 
-A Python-based simulation framework for analyzing Radio Frequency Interference (RFI) effects on space communication systems.
+A Python-based simulation framework for evaluating Radio Frequency Interference (RFI) impacts on space communication systems using ITU-R aligned models.
+
+---
 
 ## Overview
 
-This project implements ITU-R recommendation-based models to quantify how interference from various sources affects victim satellite links across multiple frequency bands (S, X, Ku, K, and Ka bands).
+This project implements a modular simulation engine to analyze dynamic, cross-band interference effects on satellite communication links across:
 
-## Key Features
+- S-band
+- X-band
+- Ku-band
+- K-band
+- Ka-band
 
-- **Multi-band Analysis**: Evaluates interference across 5 frequency bands commonly used in space communications
-- **ITU-R Compliant Models**: Implements standards including:
-  - ITU-R P.525 (Free-space path loss)
-  - ITU-R S.1528 (Antenna patterns)
-  - ITU-R S.1325 (Interference methodology)
-- **Statistical Characterization**: Log-normal interference modeling with configurable duty cycles
-- **Metrics Computed**:
-  - Baseline and degraded SNR
-  - Carrier-to-Interference ratio (C/I)
-  - Equivalent Power Flux Density (EPFD)
-  - Time-fraction exceedance probabilities
+The framework integrates deterministic orbital geometry, regulatory EPFD evaluation, adaptive modulation, atmospheric attenuation, and cross-band robustness ranking.
+
+All results are generated from a single final Jupyter notebook.
+
+---
+
+## Implemented Capabilities
+
+### Geometry-Driven Interference
+- Circular LEO propagation model
+- Time-varying slant range and off-axis angle
+- Deterministic interference power I(t)
+- Time-varying SNR degradation
+
+### ITU-R Based Link Modeling
+- ITU-R P.525 free-space path loss
+- ITU-R S.1528 antenna pattern
+- Aggregate interference computation
+- EPFD calculation
+
+### Regulatory Compliance
+- EPFD time-series evaluation
+- Exceedance probability computation
+- Compliance classification (Compliant / Marginal / Non-Compliant)
+
+### Capacity-Level Impact
+- Adaptive modulation (QPSK, 8PSK, 16APSK, 32APSK)
+- Spectral efficiency mapping
+- Throughput time-series
+- Modulation distribution statistics
+- Link availability computation
+
+### Atmospheric + RFI Joint Modeling
+- Frequency-dependent rain attenuation
+- Rain occurrence modeling
+- Joint SNR degradation
+- Joint outage probability
+
+### Cross-Band Robustness Index (RRI)
+- Combines:
+  - Throughput degradation
+  - Availability
+  - EPFD exceedance
+  - Joint outage
+- Cross-band ranking under identical stress conditions
+
+### 6G X-Band What-If Scenario
+- High-EIRP stress testing
+- Baseline vs 6G comparison
+- Robustness impact assessment
+
+### Sensitivity Analysis
+- Interferer EIRP sweep
+- Robustness vs interference strength
+- Stability check via repeated runs
+
+---
 
 ## Project Structure
 
-The workflow is: **Project_Equations.tex** → **rfi/equations_itu.py** → **rfi/scenario.py** → **notebooks/RFI_Band_Analysis.ipynb**.
-
 ```
 rfi-model/
-├── Project_Equations.tex   # Source equations (LaTeX)
+├── Project_Equations.tex    # Equation reference (LaTeX)
 ├── rfi/
-│   ├── equations_itu.py    # ITU equation implementations (from .tex)
-│   └── scenario.py        # Scenario engine and band/interference configs
+│   ├── equations_itu.py
+│   ├── geometry.py
+│   ├── propagation.py
+│   ├── link_adaptation.py
+│   ├── compliance.py
+│   └── robustness.py
 ├── notebooks/
-│   └── RFI_Band_Analysis.ipynb   # Analysis and plots
+│   └── Final_RFI_Extended_Analysis.ipynb
+├── scripts/
+│   └── build_latex.bat      # Build PDF from Project_Equations.tex
 ├── requirements.txt
 └── README.md
 ```
 
-## Installation
+---
+
+## Usage
+
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Usage
+Run:
 
-```python
-from rfi.scenario import run_multi_entry_rfi_scenario, VICTIM_BANDS, INTERFERENCE_SCENARIOS
-
-# Run a scenario
-result = run_multi_entry_rfi_scenario(
-    band_params=VICTIM_BANDS["Ka-band"],
-    interferer_list=INTERFERENCE_SCENARIOS["Moderate"],
-    time_sim_samples=5000,
-)
-
-print(f"SNR Loss: {result['SNR Loss (dB)']:.2f} dB")
+```
+notebooks/Final_RFI_Extended_Analysis.ipynb
 ```
 
-## Interference Scenarios
+All simulations, comparisons, and visualizations are executed from this notebook.
 
-Three pre-defined interference scenarios:
-- **Weak**: Low EIRP, distant interferer, large off-axis angle
-- **Moderate**: Medium parameters
-- **Strong**: High EIRP, close interferer, small off-axis angle
+To build the equation reference PDF: open `Project_Equations.tex` in the repo (e.g. with LaTeX Workshop in VS Code/Cursor) or run `scripts\build_latex.bat`. Output: `build/Project_Equations.pdf`.
 
-## Author
+---
 
+**Author**  
 Utkarsh Maurya
