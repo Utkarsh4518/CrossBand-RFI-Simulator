@@ -11,6 +11,7 @@ from rfi.equations_itu import (
     compute_carrier_to_interference_db,
     compute_snr_with_interference_db,
     compute_off_axis_gain_s1528_db,
+    compute_parabolic_antenna_params,
     generate_log_normal_interference_samples_dbw,
     compute_time_fraction_exceeded,
 )
@@ -41,6 +42,33 @@ DEFAULT_L_OTHER_DB = 0.0     # Miscellaneous / polarization losses fixed to 0 dB
 DKM_GEO = 36000.0  # km
 
 
+def _resolve_antenna_params(band_params: Dict[str, Any]):
+    """
+    Resolve G_rx_db and theta_3db from band_params.
+    If antenna_mode is 'constant_diameter' or 'band_specific_diameter' and
+    diameter_m is present and valid, compute via parabolic antenna physics.
+    Otherwise use existing G_rx_db and theta_3db (backward compatibility).
+    """
+    mode = band_params.get("antenna_mode")
+    diameter_m = band_params.get("diameter_m")
+    f_ghz = band_params.get("f_ghz")
+    efficiency = band_params.get("efficiency", 0.65)
+
+    if mode in ("constant_diameter", "band_specific_diameter") and diameter_m is not None and f_ghz is not None:
+        G_rx_db, theta_3db = compute_parabolic_antenna_params(
+            f_ghz=f_ghz,
+            diameter_m=diameter_m,
+            efficiency=efficiency,
+        )
+        if G_rx_db is not None and theta_3db is not None:
+            return (G_rx_db, theta_3db)
+
+    return (
+        band_params["G_rx_db"],
+        band_params["theta_3db"],
+    )
+
+
 # Main scenario engine
 
 def run_multi_entry_rfi_scenario(
@@ -53,6 +81,7 @@ def run_multi_entry_rfi_scenario(
 
     f_ghz = band_params["f_ghz"]
     d_km = band_params["d_km"]
+    G_rx_db, theta_3db = _resolve_antenna_params(band_params)
 
     T_sys_k = band_params["T_sys_k"]
     BW_hz = band_params.get("BW_Hz", DEFAULT_BW_HZ) #Use the band’s bandwidth if defined, otherwise default to 1 MHz
@@ -66,7 +95,7 @@ def run_multi_entry_rfi_scenario(
     # Received carrier power
     C_dbw = (
         band_params["EIRP_dbw"]
-        + band_params["G_rx_db"]
+        + G_rx_db
         - L_fs_db
         - DEFAULT_L_ATM_DB
         - DEFAULT_L_OTHER_DB
@@ -88,9 +117,9 @@ def run_multi_entry_rfi_scenario(
 	
 	# how much the victim antenna hears the interferer
         g_rx_off_axis_db = compute_off_axis_gain_s1528_db(
-            g_max=band_params["G_rx_db"],
+            g_max=G_rx_db,
             theta_deg=i_params["theta_off_axis_deg"],
-            theta_3db=band_params["theta_3db"],
+            theta_3db=theta_3db,
         )
 
 	# EIRP Computation
@@ -212,12 +241,13 @@ def run_dynamic_geometry_rfi_scenario(
     d_km = band_params["d_km"]
     T_sys_k = band_params["T_sys_k"]
     BW_hz = band_params.get("BW_Hz", DEFAULT_BW_HZ)
+    G_rx_db, theta_3db = _resolve_antenna_params(band_params)
 
     N_dbw = compute_thermal_noise_dbw(T_sys_k, BW_hz)
     L_fs_db = free_space_path_loss_db(f_ghz, d_km)
     C_dbw = (
         band_params["EIRP_dbw"]
-        + band_params["G_rx_db"]
+        + G_rx_db
         - L_fs_db
         - DEFAULT_L_ATM_DB
         - DEFAULT_L_OTHER_DB
@@ -240,9 +270,8 @@ def run_dynamic_geometry_rfi_scenario(
 
     L_fs_int_db = free_space_path_loss_db(f_ghz, d_km_array)
 
-    theta_3db = band_params["theta_3db"]
-    g_max = band_params["G_rx_db"]
     theta_edge = 2.5 * theta_3db
+    g_max = G_rx_db
     if theta_3db == 0:
         g_rx_off_axis_db = np.full_like(theta_deg_array, g_max, dtype=float)
     else:
@@ -324,8 +353,8 @@ def run_dynamic_geometry_rfi_scenario(
         eirp_int_dbw=interferer_eirp_dbw,
         slant_range_km_array=d_km_array,
         off_axis_angle_deg_array=theta_deg_array,
-        g_rx_max_db=band_params["G_rx_db"],
-        theta_3db_deg=band_params["theta_3db"],
+        g_rx_max_db=G_rx_db,
+        theta_3db_deg=theta_3db,
         f_ghz=band_params["f_ghz"],
         bandwidth_mhz=BW_hz / 1e6,
     )
@@ -382,6 +411,8 @@ VICTIM_BANDS = {
         "theta_3db": 2.5,
         "T_sys_k": 250.0,
         "BW_Hz": DEFAULT_BW_HZ,
+        "diameter_m": 2.8,
+        "antenna_mode": "band_specific_diameter",
     },
     "X-band": {
         "f_ghz": 8.4,
@@ -391,6 +422,8 @@ VICTIM_BANDS = {
         "theta_3db": 1.5,
         "T_sys_k": 300.0,
         "BW_Hz": DEFAULT_BW_HZ,
+        "diameter_m": 1.67,
+        "antenna_mode": "band_specific_diameter",
     },
     "Ku-band": {
         "f_ghz": 14.0,
@@ -400,6 +433,8 @@ VICTIM_BANDS = {
         "theta_3db": 1.2,
         "T_sys_k": 350.0,
         "BW_Hz": DEFAULT_BW_HZ,
+        "diameter_m": 1.25,
+        "antenna_mode": "band_specific_diameter",
     },
     "K-band": {
         "f_ghz": 22.0,
@@ -409,6 +444,8 @@ VICTIM_BANDS = {
         "theta_3db": 1.0,
         "T_sys_k": 400.0,
         "BW_Hz": DEFAULT_BW_HZ,
+        "diameter_m": 0.95,
+        "antenna_mode": "band_specific_diameter",
     },
     "Ka-band": {
         "f_ghz": 32.0,
@@ -418,6 +455,8 @@ VICTIM_BANDS = {
         "theta_3db": 0.8,
         "T_sys_k": 450.0,
         "BW_Hz": DEFAULT_BW_HZ,
+        "diameter_m": 0.82,
+        "antenna_mode": "band_specific_diameter",
     },
 }
 

@@ -24,6 +24,56 @@ def free_space_path_loss_db(f_ghz, d_km):
 
 # 2) antenna pattern ---------------------------------------------------
 
+# Speed of light (m/s) for parabolic antenna physics
+C_LIGHT_M_S = 2.998e8
+
+
+def compute_parabolic_antenna_params(
+    f_ghz,
+    diameter_m,
+    efficiency=0.65,
+):
+    """
+    Compute gain and 3-dB beamwidth for a parabolic aperture.
+
+    Physics:
+        λ = c / (f * 1e9)
+        G = η * (π D / λ)^2
+        G_dBi = 10 * log10(G)
+        theta_3db_deg = 70 * λ / D
+
+    Args:
+        f_ghz: frequency in GHz
+        diameter_m: aperture diameter in meters
+        efficiency: aperture efficiency η (default 0.65)
+
+    Returns:
+        G_rx_db (dBi), theta_3db (degrees).
+        Returns (None, None) if inputs are invalid (D <= 0, f <= 0, η <= 0)
+        so caller can fall back to band-specific constants.
+    """
+    try:
+        f_ghz = float(f_ghz)
+        diameter_m = float(diameter_m)
+        efficiency = float(efficiency)
+    except (TypeError, ValueError):
+        return (None, None)
+
+    if diameter_m <= 0 or f_ghz <= 0 or efficiency <= 0:
+        return (None, None)
+
+    # Wavelength in m: λ = c / (f_Hz) with f_Hz = f_ghz * 1e9
+    lam_m = C_LIGHT_M_S / (f_ghz * 1e9)
+    # Gain (linear): G = η * (π D / λ)^2
+    g_lin = efficiency * (np.pi * diameter_m / lam_m) ** 2
+    if g_lin <= 0:
+        return (None, None)
+    G_rx_db = 10.0 * np.log10(g_lin)
+    # 3-dB beamwidth (deg): theta_3db ≈ 70 * λ / D
+    theta_3db = 70.0 * lam_m / diameter_m
+    return (float(G_rx_db), float(theta_3db))
+
+
 def compute_off_axis_gain_s1528_db(g_max, theta_deg, theta_3db):
     # quick&dirty S.1528 kind of pattern
     if theta_3db == 0:
